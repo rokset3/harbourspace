@@ -1,0 +1,38 @@
+---
+title: "Gene expression microarrays"
+output: html_document
+---
+```{r message=F}
+library(dplyr)
+library(ggplot2)
+#install.packages("gridExtra")
+library(gridExtra)
+```
+Data source: http://www.ncbi.nlm.nih.gov/sites/GDSbrowser?acc=GDS4896
+
+Analysis of white blood cells from children with severe therapy-resistant asthma and those with controlled persistent mild asthma. Results provide insight into the molecular pathogenesis of these asthma pheontypes.
+
+Data:
+```{r}
+data <- read.csv("expression.csv", sep=";", row.names=1)
+head(data)
+```
+```{r}
+data[,2:19]
+healthyData <- data[,2:19]
+severeData <- data[,39:55]
+storage <- rep(0,length(data$Healthy.control))
+pval_storage <- rep(-1, length(data$Healthy.control))
+
+for(i in 1:length(data$Healthy.control)){
+  result = wilcox.test(x=as.numeric(as.vector(healthyData[i,])),
+                       y=as.numeric(as.vector(severeData[i,])))
+  pval_storage[i] <- result$p.value
+}
+pval_storage
+
+  
+
+```
+Which genes have different average expression levels between healthy controls and patients with severe asthma?
+

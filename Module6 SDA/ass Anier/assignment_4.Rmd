@@ -1,0 +1,293 @@
+---
+title: "assignment4"
+author: "Anier Velasco Sotomayor"
+date: "2023-03-01"
+output: html_document
+---
+
+```{r, echo=F, warning=F, message=F}
+#Download the library from github, add your personal token by calling "GITHUB_PAT = your_token" in usethis::edit_r_environ()
+#devtools::install_github("FinYang/tsdl")
+#usethis::create_github_token()
+#usethis::edit_r_environ()
+#devtools::install_github("FinYang/tsdl")
+library(tsdl)
+library(forecast)
+library(tseries)
+library(lmtest)
+library(Hmisc)
+library(lubridate)
+library(zoo)
+
+
+tSeries<-subset(tsdl, description = "Montly av. residential gas usage Iowa")[[1]]
+data <- data.frame(date=as.Date(as.yearmon(time(tSeries))), Y=as.matrix(tSeries))
+names(data)[1] <- "Date"
+names(data)[2] <- "Value"
+
+data$Date <-as.Date(as.character(data$Date), format = "%Y-%m-%d")
+data$Value <- as.numeric(data$Value)
+
+xname <- "Montly av. residential gas usage Iowa"
+plot(tSeries, type="l", ylab=xname, col="red")
+grid()
+D<-round(length(tSeries)/10) #11 here
+
+trainSeries <- window(tSeries, end  =c(year(data$Date[length(data$Date)-D]),  month(data$Date[length(data$Date)-D])))
+testSeries  <- window(tSeries, start=c(year(data$Date[length(data$Date)-D+1]),month(data$Date[length(data$Date)-D+1])))
+
+```
+The behavior of series does not differ significantly over period of time, so we will work with entire dataset.
+
+```{r, echo=FALSE, fig.height=8, fig.width=10}
+plot(stl(tSeries, s.window="periodic"))
+```
+We need to transform the data, since we can observe different variance over time
+Box-Cox transformation with optimal $\lambda$:
+```{r, echo=FALSE, fig.width=10, fig.height=8}
+par(mfrow=c(2,1))
+plot(tSeries, ylab="Original series", xlab="", col="red")
+grid()
+
+LambdaOpt <- BoxCox.lambda(tSeries)
+plot(BoxCox(tSeries, LambdaOpt), ylab="Transformed series", xlab="", col="red")
+title(main=toString(round(LambdaOpt, 3)))
+grid()
+```
+Now let's work on models
+
+## ETS MODEL
+```{r, echo=FALSE}
+fit.ets <- ets(tSeries, lambda=LambdaOpt, biasadj = T)
+print(fit.ets)
+```
+
+Now we observe residuals:
+```{r, echo=FALSE, fig.height=8, fig.width=10}
+tsdisplay(residuals(fit.ets))
+```
+Residuals do not look like a white noise. Also we can see that there is still some autocorrelated residuals left. So it might be the case, that ETS model did not capture all of the structure of data.
+Ljung-Box test p-values for them:
+
+```{r, echo=FALSE}
+p <- rep(0, 1, frequency(tSeries)*3)
+for (i in 1:length(p)){
+  p[i] <- Box.test(residuals(fit.ets), lag=i, type = "Ljung-Box")$p.value
+}
+plot(p, xlab="Lag", ylab="p-values", ylim=c(0,1), main="Ljung-Box test")
+abline(h = 0.05, lty = 2, col = "blue")
+```
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+par(mfrow=c(1,2))
+qqnorm(residuals(fit.ets))
+qqline(residuals(fit.ets), col="red")
+hist(residuals(fit.ets))
+```
+
+
+Hypothesis   | Test         | Result         | P-value
+------------ | ------------ | -------------- | ------------------------------
+Normality    | Shapiro-Wilk | not rejected   | `r shapiro.test(residuals(fit.ets))$p.value`
+Unbiasedness | Wilcoxon     | not rejected   | `r wilcox.test(residuals(fit.ets))$p.value`
+Stationarity | KPSS         | not rejected   | `r kpss.test(residuals(fit.ets))$p.value`
+
+
+OK, residuals are normal, unbiased and stationary. This is good.
+
+Fitting the selected model to the first $T-D$ points of the series to check the accuracy of the forecast on the last $D$ points:
+```{r, echo=FALSE}
+fitShort <- ets(trainSeries, model="ANA", damped=F, lambda=LambdaOpt, biasadj = T)
+fc       <- forecast(fitShort, h=D)
+accuracy(fc, testSeries)
+```
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(forecast(fitShort, h=D), ylab=xname, xlab="Year")
+lines(tSeries, col="red")
+```
+
+## Auto-ARIMA
+```{r, echo=FALSE}
+fit.auto <- auto.arima(tSeries, lambda=LambdaOpt, biasadj=T)
+fit.auto
+```
+ARIMA(1,0,0)(2,1,1)$_{12}$ is selected. Here are the residuals:
+```{r, echo=FALSE, fig.height=4.5, fig.width=10}
+res.auto <- residuals(fit.auto)
+plot(res.auto)
+```
+At the beginning residuals are not defined properly; let's cut the first 12 before proceeding with residual analysis.
+```{r, echo=FALSE, fig.height=8, fig.width=10}
+res.auto <- res.auto[-c(1:12)]
+tsdisplay(res.auto)
+```
+Here results are better for residuals. No high autocorrelation and partial autocorrelation
+```{r, echo=FALSE}
+p <- rep(0, 1, frequency(tSeries)*3)
+for (i in 1:length(p)){
+  p[i] <- Box.test(res.auto, lag=i, type = "Ljung-Box")$p.value
+}
+plot(p, xlab="Lag", ylab="p-values", ylim=c(0,1), main="Ljung-Box test")
+abline(h = 0.05, lty = 2, col = "blue")
+```
+
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+par(mfrow=c(1,2))
+qqnorm(res.auto)
+qqline(res.auto, col="red")
+hist(res.auto)
+```
+
+Hypothesis   | Test         | Result         | P-value
+------------ | ------------ | -------------- | ------------------------------
+Normality    | Shapiro-Wilk | rejected       | `r shapiro.test(res.auto)$p.value`
+Unbiasedness | Wilcoxon     | not rejected   | `r wilcox.test(res.auto)$p.value`
+Stationarity | KPSS         | not rejected   | `r kpss.test(res.auto)$p.value`
+
+
+Fitting the selected model to the first $T-D$ points of the series to check the accuracy of the forecast on the last $D$ points:
+ARIMA(1,0,0)(2,1,1)[12] with drift 
+```{r, echo=FALSE}
+
+fitShort <- Arima(trainSeries, order=c(1,0,0), seasonal=c(2,1,1), lambda=LambdaOpt, biasadj = T, include.drift = T)
+fc       <- forecast(fitShort, h=D)
+accuracy(fc, testSeries)
+```
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(forecast(fitShort, h=D), ylab=xname, xlab="Time")
+lines(tSeries, col="red")
+```
+### Manual model tuning
+The series are seasonal, so we want to perform seasonal differencing. 
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(diff(BoxCox(tSeries, LambdaOpt), 12), type="l", col="red")
+grid()
+```
+
+Let's see if regular differencing makes it more better.
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(diff(diff(BoxCox(tSeries, LambdaOpt), 12), 1), type="l", col="red")
+grid()
+```
+
+
+The hypothesis of stationarity is not rejected (p>`r kpss.test(diff(diff(BoxCox(tSeries, LambdaOpt), 12), 1))$p.value`, KPSS test).
+```{r, echo=FALSE, fig.height=5.5, fig.width=12}
+par(mfrow=c(1,2))
+acf(diff(diff(BoxCox(tSeries, LambdaOpt), 12), 1), lag.max=5*12, main="")
+pacf(diff(diff(BoxCox(tSeries, LambdaOpt), 12), 1), lag.max=5*12, main="")
+```
+Autocorrelation is significantly different from 0 for lags 1, 12, 13, 41, 53
+Since 12 is maximal significant seasonal lag, we could use $Q = 12/12 = 1$ as an initial approximation.
+Maximal significant lag before 12 is 1, hence the starting value $q=1$.
+
+Partial autocorrelation is significantly different from 0 for lags 1, 4, 7, 12, 24, 41
+Following the same logic as above, we select initial values $P=2$, $p=7$.
+
+Now I'll look for the best models with auto.arima using d=1, D=1, max.p=8, max.q=2, max.P=3, max.Q=2 (where possible, I added 1 to every initial approximation found above just in case), and the parameters of the automatic model as starting points of the search (start.p=1, start.q=0, start.P=0, start.Q=0). 
+
+```{r echo=F}
+fit <- auto.arima(tSeries, d=1, D=1, max.p=8, max.q=2, max.P = 3, max.Q = 2, 
+                  start.p=1, start.q=0, start.P=0, start.Q=0, 
+                  lambda=LambdaOpt, biasadj=T)
+
+fit
+```
+The lowest AICc has ARIMA(2,1,0)(2,1,0)$_{12}$. Does it have good residuals?
+```{r, echo=FALSE, fig.height=4.5, fig.width=10}
+res <- residuals(fit)
+plot(res)
+```
+```{r, echo=FALSE, fig.height=8, fig.width=10}
+res <- res[-c(1:12)]
+tsdisplay(res)
+```
+
+```{r, echo=FALSE}
+p <- rep(0, 1, frequency(tSeries)*3)
+for (i in 1:length(p)){
+  p[i] <- Box.test(res, lag=i, type = "Ljung-Box")$p.value
+}
+plot(p, xlab="Lag", ylab="p-values", ylim=c(0,1), main="Ljung-Box test")
+abline(h = 0.05, lty = 2, col = "blue")
+```
+Q-Q plot and histogram of the residuals:
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+par(mfrow=c(1,2))
+qqnorm(res)
+qqline(res, col="red")
+hist(res)
+```
+
+Hypothesis   | Test         | Result         | P-value
+------------ | ------------ | -------------- | ------------------------------
+Normality    | Shapiro-Wilk | not rejected   | `r shapiro.test(res)$p.value`
+Unbiasedness | Wilcoxon     | not rejected   | `r wilcox.test(res)$p.value`
+Stationarity | KPSS         | not rejected   | `r kpss.test(res)$p.value`
+
+
+We cannot reject that residuals are not normal and not biased, but they are unstationary now.
+Fitting the selected model to the first $T-D$ points of the series to check the accuracy of the forecast on the last $D$ points:
+ARIMA(2,1,0)(2,1,0)[12]
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+fitShort <- Arima(trainSeries, order=c(2,1,0), seasonal=c(2,1,0), lambda=LambdaOpt, biasadj = T)
+fc       <- forecast(fitShort, h=D)
+accuracy(fc, testSeries)
+```
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(forecast(fitShort, h=D), ylab=xname, xlab="Year")
+lines(tSeries, col="red")
+```
+## Final model selection
+
+Comparing the residuals of two ARIMAs:
+```{r, echo=FALSE, fig.height=8, fig.width=8}
+res      <- residuals(fit, type = "response")[-c(1:12)]
+res.auto <- residuals(fit.auto, type = "response")[-c(1:12)]
+
+plot(res, res.auto, xlim=c(min(res, res.auto), max(res, res.auto)), ylim=c(min(res, res.auto), max(res, res.auto)), 
+     xlab = "Residuals of manually found model", ylab="Residuals of auto.arima model")
+grid()
+lines(c(min(res, res.auto), max(res, res.auto))*2, c(min(res, res.auto), max(res, res.auto))*2, col="red")
+```
+Residuals are different from auto ARIMA and manually tuned ARIMA.
+
+Auto ARIMA vs Manual
+```{r, echo=F}
+dm.test(res, res.auto)
+```
+We cannot reject that there is no significant difference in forecasting error between auto ARIMA and manual ARIMA. Based on AICc score and losses on test set and Theil's U it should be safe to prefer auto ARIMA over manual ARIMA.
+
+Now let's compare it to ets model
+Comparing the residuals of the best ARIMA and the best ETS models:
+```{r fig.width=8, fig.height=8, echo=FALSE}
+res.ets <- residuals(fit.ets, type = "response")[-c(1:12)]
+
+plot(res, res.ets, 
+     xlab="Residuals, best ARIMA",
+     ylab="Residuals, best ETS",
+     xlim=c(min(c(res.auto, res.ets), na.rm=T), max(c(res.auto, res.ets), na.rm=T)),
+     ylim=c(min(c(res.auto, res.ets), na.rm=T), max(c(res.auto, res.ets), na.rm=T)))
+ lines(c(min(c(res.auto, res.ets), na.rm=T), max(c(res.auto, res.ets), na.rm=T)), c(min(c(res.auto, res.ets), na.rm=T), max(c(res.auto, res.ets), na.rm=T)), col="red")
+```
+
+Their residuals are also different.
+```{r, echo=F}
+dm.test(res.auto, res.ets)
+dm.test(res.auto, res.ets, alternative = "greater")
+```
+Diebold-Mariano Test shows no significant evidence to reject the null that their forecasts are different. 
+* Auto ARIMA had the lowest AICc score (593). Their losses on test set are fluctiuating, so it is hard to determine which model is better on a test set. Its Theil's U is 0.23
+* ETS model has the highest AICc (861) score, but its Theil's U is smaller (0.21).
+
+For this hard decision, I decide to use auto ARIMA model based on AICc.
+
+## Forecast with auto ARIMA
+## Forecast
+```{r, echo=FALSE}
+fl <- forecast(fit.auto, h=D)
+print(fl)
+```
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(fl, ylab=xname, xlab="Year", col="red")
+```
+

@@ -1,0 +1,84 @@
+---
+title: "Lifespan and diet for rats"
+output: html_document
+---
+195 lab rats were part of the experiment.  
+106 of them were randomly assigned to a restricted diet, 89 were able to eat ad libitum. 
+Dataset: measured lifespan for each animal from both groups.
+Does the diet influence the lifespan?
+
+```{r echo=FALSE, message=FALSE}
+install.packages('dplyr')
+install.packages('ggplot2')
+library(dplyr)
+library(ggplot2)
+theme_set(theme_bw())
+```
+
+195 lab rats were part of the experiment.  
+106 of them were randomly assigned to a restricted diet, 89 were able to eat ad libitum. 
+Dataset: measured lifespan for each animal from both groups.
+Does the diet influence the lifespan?
+
+```{r}
+rats <- read.table("rats.txt", sep="\t", header=T)
+```
+
+```{r}
+rats %>%
+  ggplot(aes(x=lifespan)) +
+  geom_histogram(aes(fill=diet, color=diet), alpha=0.5, position = 'identity', bins=30) +
+  xlab("Lifespan in days") 
+```
+
+**Make a boxplot of the data. **
+```{r}
+rats%>%
+  ggplot(aes(x=lifespan, y=diet))+
+  geom_boxplot(aes(fill=diet, color=diet)) + 
+  xlab('boxplot')
+```
+
+Are the samples normal? Let's check the q-q plots.
+```{r, fig.height=5, fig.width=5}
+rats %>%
+  ggplot(aes(sample = lifespan, colour = diet)) +
+  stat_qq() +
+  stat_qq_line() 
+```
+In the first sample the tails are quite heavy, and in the second a couple of smallest observations deviate far from the line.
+
+A biologist suggested we exclude rats that lived less than 400 days from the analysis because they are likely died from some illnesses not related to the diet. 
+
+** Exclude the observations, check the q-q plots again **
+```{r}
+rats%>%
+  filter(lifespan >= 400) + 
+  ggplot(aes(sample = lifespan, colour = diet)) +
+  stat_qq() +
+  stat_qq_line() 
+
+```
+Let's test the null hypothesis $H_0$: average lifespan of rats does not change with the dietary restrictions against two-sided alternative.
+
+** Test the hypothesis with the appropriate test.**
+```{r}
+rats_filtered <- rats%>%
+  filter(lifespan>400)
+library('PropCIs')
+diffscoreci()
+rats_filtered%>%
+  filter(diet=='restricted')
+t.test(rats_filtered$lifespan[rats_filtered$diet =='restricted'],
+       rats_filtered$lifespan[rats_filtered$diet =='ad libitum'])
+```
+
+Would the results be very different had we not filtered the dataset? 
+** Use the same test on unfiltered data.**
+```{r}
+t.test(rats$lifespan[rats$diet =='restricted'],
+       rats$lifespan[rats$diet =='ad libitum'])
+```
+
+**************
+Weindruch R., Walford R.L. **The Retardation of Aging and Disease by Dietary Restriction.**  Springfield: Charles C. Thomas, 1988.

@@ -1,0 +1,63 @@
+---
+title: "Freshmen academic performance"
+output: html_document
+---
+
+```{r message=F}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+theme_set(theme_bw())
+```
+
+A researcher has collected data on three psychological variables and four academic variables (standardized test scores) for 600 college freshman. 
+
+```{r fig.height=8, fig.width=8}
+data <- read.table("mmreg.csv", sep=',', header=T)
+psych <- data[, 1:3]
+ggpairs(psych)
+ggpairs(data)
+```
+
+** Calculate pairwise Pearson and Spearman correlation coefficients and test whether they are different from 0. Use `rcorr` from `Hmisc`, and try plotting correlation matrices with `corrplot`.**
+```{r, warning=FALSE, message=FALSE}
+install.packages('Hmisc')
+library(Hmisc)
+rcorr(as.matrix(data), type="pearson")
+rcorr(as.matrix(data), type="spearman")
+
+install.packages('corrplot')
+library(corrplot)
+corr_df <- data.frame(rcorr(as.matrix(data))[1])
+corrplot(corr_df)
+corrplot(cor(data))
+```
+
+**For a selected pair of features, calculate Kendall's correlation coefficient ant its significance using `cor` and `cor.test`:**
+```{r}
+```
+
+**Implement permutation test for Spearman correlation coefficient between math and self concept**
+```{r}
+install.packages('jmuOutlier')
+library(jmuOutlier)
+perm.cor.test(data$math, data$self_concept, method='spearman')
+```
+
+**Compare the result to `spearman_test` from `coin`**
+```{r}
+install.packages('coin')
+library(coin)
+spearman_test(math ~ self_concept, data=data)
+?spearman_test
+perm.cor.test
+```
+
+** With `pcor` from `ppcor` calculate Pearson's partial correlations (excluding the influence of everything except the pair) and compare them to simple pairwise correlations.  **
+```{r}
+```
+
+
+******************
+R Data Analysis Examples: Canonical Correlation Analysis. UCLA: Statistical Consulting Group. 
+https://stats.idre.ucla.edu/r/dae/canonical-correlation-analysis/ 

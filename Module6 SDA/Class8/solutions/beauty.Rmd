@@ -1,0 +1,425 @@
+---
+title: "Attractiveness and wage"
+author: "Evgeniy Riabenko"
+output: html_document
+---
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(lattice)
+library(MASS)
+library(lmtest)
+library(sandwich)
+library(mvtnorm)
+library(car)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(GGally)
+theme_set(theme_bw())
+
+mycol <- rgb(30,30,30,100,maxColorValue=255)
+
+mycoeftest <- function(m, EstType){
+  beta  <- coef(m)[-1]
+  Vbeta <- vcovHC(m, type = EstType)[-1,-1]
+  D <- diag(1 / sqrt(diag(Vbeta)))
+  t <- D %*% beta
+  Cor <- D %*% Vbeta %*% t(D)
+  if (EstType == "const"){
+    m.df <- length(m$residuals) - length(beta)
+  }else{
+    m.df=Inf
+  }
+  p_adj <- sapply(abs(t), function(x) 1-pmvt(-rep(x, length(beta)), rep(x, length(beta)), corr = Cor, df = m.df))
+  c(NaN, p_adj)
+}
+
+addtrend <- function(x, y){
+  y <- y[order(x)]
+  x <- sort(x)  
+  lines(x, predict(loess(y ~ x)), col = "red")
+}
+```
+
+## Problem formulation
+1260 study participants provided the following data:
+
+* hourly wage in $;
+* working experience in years;
+* education in years;
+* attractiveness on a scale from 1 to 5;
+* binary features: sex, marital status, health (good/bad), ethnicity (white/black), union membership indicator, service industry indicator.
+```{r echo=F}
+data <- read.csv("beauty.csv", sep=";")
+```
+We need to estimate the influence of attractiveness on wage while adjusting for other factors.
+
+Data:
+```{r, echo=FALSE, fig.height=15, fig.width=15, warning=F, message=F}
+data %>% 
+  mutate_at(c("union", "goodhlth", "black", "female", "married", "service", "looks"), as.factor) %>%
+  ggpairs(mapping = aes(alpha=0.5, fill='red'))
+```
+
+## Solution
+### Preprocessing
+Histogram of attractiveness:
+
+```{r, echo=FALSE}
+data %>% 
+  ggplot(aes(x=looks)) +
+  geom_bar(fill='red', col='black')
+```
+
+There are just a few observations with looks=1 and looks=5. Let's transform the looks feature to two binary indicators of being above or below average:
+
+looks  | aboveavg | belowavg
+-------| ---------| ---------
+<3     | 1        |  0
+ 3     | 0        |  0
+>3     | 0        |  1
+
+```{r, echo=FALSE}
+data$aboveavg <- rep(1, dim(data)[1]) * (data$looks>3)
+data$belowavg <- rep(1, dim(data)[1]) * (data$looks<3)
+data$looks <- NULL
+```
+
+Distribution of the response variable:
+
+```{r, echo=FALSE}
+g1 <- data %>%
+  ggplot(aes(x=wage)) +
+  geom_histogram(fill='red', col='black', bins=50)
+
+g2 <- data %>%
+  ggplot(aes(x=log(wage))) +
+  geom_histogram(fill='red', col='black', bins=50)
+
+grid.arrange(g1, g2, nrow=1)
+```
+
+1. One person in the dataset makes 77.72$ per hour, the rest is below 45$; let's remove this person.
+```{r, echo=FALSE}
+excluded <- subset(data, wage>45)
+data     <- subset(data, wage<=45)
+```
+2. $\frac{\max y}{\min y}=$ `r max(data$wage)/min(data$wage)` $>10$, we need to do Box-Cox transformation:
+
+```{r, echo=FALSE, warning=FALSE}
+par(mfrow=c(1,1))
+boxcox(lm(wage~., data=data))
+```
+
+We'll use $\lambda=0$, meaning that we'll be modelling the logarithm of the response. 
+
+```{r, echo=FALSE}
+data$logwage <- log(data$wage)
+data$wage <- NULL
+
+excluded$logwage <- log(excluded$wage)
+excluded$wage <- NULL
+```
+
+### Model 1
+Linear model with all the features.
+```{r, echo=FALSE}
+m1 <- lm(logwage ~., data=data)
+```
+
+Residuals visual inspection:
+```{r, echo=FALSE, fig.height=7, fig.width=10}
+par(mfrow=c(2,2))
+
+qqnorm(residuals(m1))
+qqline(residuals(m1), col="red")
+grid()
+
+plot(data$educ, rstandard(m1), xlab="Education", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$educ, rstandard(m1))
+grid()
+
+plot(data$exper, rstandard(m1), xlab="Experience", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper, rstandard(m1))
+grid()
+```
+
+Residuals show the quadratic dependence on the working experience.
+
+### Model 2
+Adding to the model the square of working experience.
+```{r, echo=FALSE}
+m2 <- lm(logwage ~ . + I(exper^2) , data=data)
+```
+Visual inspection of the residuals does not provide any insights:
+```{r, echo=FALSE, fig.height=7, fig.width=10}
+par(mfrow=c(2,2))
+
+qqnorm(residuals(m2))
+qqline(residuals(m2), col="red")
+grid()
+
+plot(data$educ, rstandard(m2), xlab="Education", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$educ, rstandard(m2))
+grid()
+
+plot(data$exper, rstandard(m2), xlab="Experience", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper, rstandard(m2))
+grid()
+
+plot(data$exper^2, rstandard(m2), xlab="Experience^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper^2, rstandard(m2))
+grid()
+```
+
+Follow-up tests for the residuals:
+
+Test         | p-value 
+----------   | ---------
+Shapiro-Wilk | `r shapiro.test(residuals(m2))$p.value`
+Breusch-Pagan| `r bptest(m2)$p.value`
+
+They are not normal and heteroscedastic, so we'll need to use White's correction as well as adjustment for multiplicity when estimating the significance of the predictors:
+```{r, echo=FALSE}
+s2 <-summary(m2)
+s2$coefficients <- cbind(s2$coefficients, mycoeftest(m2, "HC0"))
+dimnames(s2$coefficients)[[2]][5] <- "Adjusted p-value"
+print(s2)
+```
+Non-significant features: health, race, marital status, attractiveness above average. 
+Before removing insignificant features, let's check if they are part of significant interactions:
+```{r, echo=FALSE}
+add1(m2, ~ .^2, test="F")
+```
+
+### Model 3
+Removing from  model 2 all the insignificant predictors and adding the interaction between sex and working experience.
+```{r, echo=FALSE}
+m3 <- lm(logwage ~ exper+ exper*female + female + union + service + educ + aboveavg + belowavg + I(exper^2), data=data)
+```
+Residuals:
+```{r, echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(3,2))
+
+qqnorm(residuals(m3))
+qqline(residuals(m3), col="red")
+grid()
+
+plot(data$educ, rstandard(m3), xlab="Education", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$educ, rstandard(m3))
+grid()
+
+plot(data$exper, rstandard(m3), xlab="Experience", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper, rstandard(m3))
+grid()
+
+plot(data$exper^2, rstandard(m3), xlab="Experience^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper^2, rstandard(m3))
+grid()
+
+plot(data$exper * data$female, rstandard(m3), xlab="Experience * Sex", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper * data$female, rstandard(m3))
+grid()
+```
+(no insights). 
+
+Properties:
+
+Test         | p-value 
+----------   | ---------
+Shapiro-Wilk | `r shapiro.test(residuals(m3))$p.value`
+Breusch-Pagan| `r bptest(m3)$p.value`
+
+nonnormal and heteroscedastic. Significance testing with White's correction and multiplicity adjustment:
+```{r, echo=FALSE}
+s3 <-summary(m3)
+s3$coefficients <- cbind(s3$coefficients, mycoeftest(m3, "HC0"))
+dimnames(s3$coefficients)[[2]][5] <- "Adjusted p-value"
+print(s3)
+```
+All the features except the indicator of the attractiveness below awerage are significant. 
+
+Davidson-MacKinnon with White's correction finds model 3 significantly better than model 2:
+```{r, echo=FALSE}
+jtest(m2,m3, vcov. = function(x) vcovHC(x, type = "HC0"))
+```
+
+
+### Model 4
+Let's try to keep ethnicity and marital status in model 2, to add their interaction with sex. As in model 3 we'll use the interaction of sex with working experience, and omit health. 
+```{r, echo=FALSE}
+m4 <- lm(logwage ~ exper + I(exper^2) + exper*female + female + black + female*black + married + female*married + union + service + educ + aboveavg + belowavg, data=data)
+```
+Residuals:
+```{r, echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(3,2))
+
+qqnorm(residuals(m4))
+qqline(residuals(m4), col="red")
+grid()
+
+plot(data$educ, rstandard(m4), xlab="Education", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$educ, rstandard(m4))
+grid()
+
+plot(data$exper, rstandard(m4), xlab="Experience", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper, rstandard(m4))
+grid()
+
+plot(data$exper^2, rstandard(m4), xlab="Experience^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper^2, rstandard(m4))
+grid()
+
+plot(data$exper * data$female, rstandard(m4), xlab="Experience * Sex", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$exper * data$female, rstandard(m4))
+grid()
+```
+(no insights). Properties:
+
+Test         | p-value 
+----------   | ---------
+Shapiro-Wilk | `r shapiro.test(residuals(m4))$p.value`
+Breusch-Pagan| `r bptest(m4)$p.value`
+
+nonnormal and heteroscedastic. Significance testing with White's correction and multiplicity adjustment:
+```{r, echo=FALSE}
+s4 <-summary(m4)
+s4$coefficients <- cbind(s4$coefficients, mycoeftest(m4, "HC0"))
+dimnames(s4$coefficients)[[2]][5] <- "Adjusted p-value"
+print(s4)
+```
+
+Comparing to model 3 with Wald's test with White's correction:
+```{r, echo=FALSE}
+waldtest(m4, m3, vcov = vcovHC(m4, type = "HC0"))
+```
+Model 4 is significantly better.
+
+Do we need to add any other interactions?
+```{r, echo=FALSE}
+add1(m4, ~ .^2, test="F")
+```
+Interaction with the square of working experience is difficult to interpret, so let's not add anything more. 
+
+### Model 5
+In model 4 marital status and it's interactions are all insignificant. Let's see if the model would become significantly worse after deleting both (we'll use Wald's test with White's correction):
+```{r, echo=FALSE}
+m5 <- lm(logwage ~ exper + I(exper^2) + exper*female + female + black + female*black + union + service + educ + aboveavg + belowavg, data=data)
+
+s5 <-summary(m5)
+s5$coefficients <- cbind(s5$coefficients, mycoeftest(m5, "HC0"))
+dimnames(s5$coefficients)[[2]][5] <- "Adjusted p-value"
+print(s5)
+
+waldtest(m4, m5, vcov = vcovHC(m4, type = "HC0"))
+```
+
+Model indeed becomes significantly worse. Let's try to delete only the interaction of sex and marital status.
+```{r, echo=FALSE}
+m5 <- lm(logwage ~ exper + I(exper^2) + exper*female + female + black + female*black + married + union + service + educ + aboveavg + belowavg, data=data)
+
+s5 <-summary(m5)
+s5$coefficients <- cbind(s5$coefficients, mycoeftest(m5, "HC0"))
+dimnames(s5$coefficients)[[2]][5] <- "Adjusted p-value"
+print(s5)
+
+waldtest(m4, m5, vcov = vcovHC(m4, type = "HC0"))
+```
+It gets significantly worse again, and the adjusted R2 gets smaller. We need to get back to model 4.
+
+### Cook's distance
+What are the influential observations?
+```{r, echo=FALSE, fig.width=10}
+par(mfrow=c(1,2))
+plot(fitted(m4), cooks.distance(m4), xlab="Fitted log wages", ylab="Cook's distance", col=mycol, pch=19)
+lines(c(-100,100), c(0.015, 0.015), col="red")
+plot(data$logwage, cooks.distance(m4), xlab="Log wages", ylab="Cook's distance", col=mycol, pch=19)
+lines(c(-100,100), c(0.015, 0.015), col="red")
+```
+
+Removing the observations with Cook's distance above 0.015 (the threshold is chosen by visual inspection) and re-tuning the model 4 on the reduced dataset.
+```{r, echo=FALSE}
+excluded <- rbind(excluded, data[cooks.distance(m4)>0.015,])
+data2 <-data[cooks.distance(m4)<=0.015,]
+m6 <- lm(logwage ~ exper + I(exper^2) + exper*female + female + black + female*black + married + female*married + union + service + educ + aboveavg + belowavg, data=data2)
+```
+Let's compare the coefficients of the new model with ones of the original model 4:
+```{r, echo=FALSE}
+res <- cbind(coefficients(m4), coefficients(m6))
+colnames(res) <- c("All data", "Filtered data")
+res
+```
+Some coefficients have changed drastically, which means that the removal of influential observations did make sence.
+
+The residuals of the new model:
+```{r, echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(3,2))
+
+qqnorm(residuals(m6))
+qqline(residuals(m6), col="red")
+grid()
+
+plot(data2$educ, rstandard(m6), xlab="Education", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data2$educ, rstandard(m6))
+grid()
+
+plot(data2$exper, rstandard(m6), xlab="Experience", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data2$exper, rstandard(m6))
+grid()
+
+plot(data2$exper^2, rstandard(m6), xlab="Experience^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data2$exper^2, rstandard(m6))
+grid()
+
+plot(data2$exper * data2$female, rstandard(m6), xlab="Experience * Sex", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data2$exper * data2$female, rstandard(m6))
+grid()
+```
+(no insights). Properties:
+
+Test         | p-value 
+----------   | ---------
+Shapiro-Wilk | `r shapiro.test(residuals(m6))$p.value`
+Breusch-Pagan| `r bptest(m6)$p.value`
+
+nonnormal and heteroscedastic. Significance testing with White's correction and multiplicity adjustment:
+
+```{r, echo=FALSE}
+s6 <-summary(m6)
+s6$coefficients <- cbind(s6$coefficients, mycoeftest(m6, "HC0"))
+dimnames(s6$coefficients)[[2]][5] <- "Adjusted p-value"
+print(s6)
+```
+
+Could we remove the interaction of sex with race or marital status without significantly worsening the model?
+```{r, echo=FALSE}
+m7 <- lm(logwage ~ exper + I(exper^2) + exper*female + female + black + female*married + married + union + service + educ + aboveavg + belowavg, data=data2)
+s7 <-summary(m7)
+s7$coefficients <- cbind(s7$coefficients, mycoeftest(m7, "HC0"))
+dimnames(s7$coefficients)[[2]][5] <- "Adjusted p-value"
+print(s7)
+waldtest(m6, m7, vcov = vcovHC(m6, type = "HC0"))
+```
+We could not.
+
+## Results
+The final model (#6) is build using `r dim(data2)[1]` of the initial 1260 datapoints; it explains `r round(100*summary(m6)$r.squared)`% of the variation in the logarithm of the hourly wage:
+
+```{r, echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(1,1))
+plot(data2$logwage, fitted(m6), xlab="Log wage", ylab="Predicted log wage", pch=19, col=mycol, 
+     xlim=c(0,max(excluded$logwage)), ylim=c(0,3))
+lines(c(0,10), c(0,10), col="red")
+points(excluded$logwage, predict(m6, excluded), col="red", pch=19)
+grid()
+```
+
+The factors we are interested in - the indicators of attractiveness above and below average - have the following coefficients in the model:
+```{r, echo=FALSE}
+coefficients(m6)[c("aboveavg", "belowavg")]
+confint(m6)[c("aboveavg", "belowavg"),]
+```
+
+Adjusting for selected covariates (sex, race, marital status, union membership, indicator of the service industry, working experience, education level), we could conclude that in the population this sample is taken from people with the attractiveness below average earn `r round(-100*coefficients(m6)["belowavg"])`% less (95% confidence interval (`r round(-100*confint(m6)["belowavg",c(2,1)])`)%, p=`r s6$coefficients["belowavg", 4]`), and people with attractiveness above average -  `r round(-100*coefficients(m6)["aboveavg"], 1)`% less (95% confidence interval (`r round(-100*confint(m6)["aboveavg",c(2,1)])`), p=`r s6$coefficients["aboveavg", 4]`). Since the last confidence interval includes 0, we cannot rule out the possibility that being more attractive does not influence the wage at all.
+
+***************
+Hamermesh D.S., Biddle J.E. (1994) **Beauty and the Labor Market**, American Economic Review, 84, 1174-1194.

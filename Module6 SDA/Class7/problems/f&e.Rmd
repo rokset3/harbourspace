@@ -1,0 +1,67 @@
+---
+title: "Faith and education"
+output: html_document
+---
+General Social Survey — an annual US citizens survey with about 5000 questions. From the survey of 2008 we selected the data on faith and education levels for 2000 respondents. Are these two variables independent?
+
+```{r}
+library(dplyr)
+library(ggplot2)
+install.packages("tidyr")
+library(tidyr)
+install.packages("ggmosaic")
+library(ggmosaic)
+data <- matrix(c(9,  8,27, 8, 47,236,
+                 23,39,88,49,179,706,
+                 28,48,89,19,104,293),
+               nrow=3, byrow=TRUE, 
+               dimnames = list(c("Less than high school", "High school/junior college", "Bachelor/graduate"), 
+                               c("don't", "no way", "some power", "sometimes", "doubts", "know")))
+
+data
+```
+
+```{r}
+data_long <- data %>%
+  as.data.frame() %>%
+  mutate(Education = row.names(data)) %>%
+  pivot_longer(!Education, names_to = 'Beliefs', values_to='n') %>%
+  mutate(Beliefs = factor(Beliefs, levels = c("don't", "no way", "some power", "sometimes", "doubts", "know")))
+
+data_long <- as.data.frame(lapply(data_long, rep, data_long$n)) %>% dplyr::select(-n)
+
+ggplot(data_long) +
+  geom_mosaic(aes(x = product(Education, Beliefs), fill = Education))+
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  xlab('') + ylab('') +
+  guides(fill="none")
+```
+
+
+** Test the independence with chi squared test ** 
+```{r}
+chisq_test <-chisq.test(data)
+chisq_test
+chisq.test(data, correct=F)$stdres
+```
+
+** Try using Fisher's exact test**
+```{r, error=TRUE}
+fischer_test<- fisher.test(data, simulate.p.value=TRUE)
+fischer_test
+
+```
+
+**Calculate Cramer's V and gamma coefficients (`assocstats` from `vcd` and `GKgamma` from `vcdExtra`) **  
+```{r, message=FALSE, warning=FALSE}
+install.packages('vcd')
+install.packages('vcdExtra')
+library(vcd)
+library(vcdExtra)
+assocstats(data)
+GKgamma(data)
+```
+
+****************
+2008 General Social Survey, National Opinion Research center (Agresti A. **Categorical Data Analysis**. — Hoboken: John Wiley & Sons, 2013, table 3.2)

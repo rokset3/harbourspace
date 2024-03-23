@@ -1,0 +1,173 @@
+---
+title: "Exam_solution"
+author: "Evgeniy Riabenko"
+date: "5/15/2018"
+output: html_document
+---
+
+#3
+For 61 big cities in England and Wales we know the average annual mortality rates (per 100000 people) and concentration of calcium in drinking water. Cities are classified as either northern or southern (water.txt)
+Calculate a 95% confidence interval for the mortality rate in big cities
+```{r}
+setwd('C:\\Users\\Temirlan\\Desktop\\HarbourSpace\\Module6 SDA\\final\\exam')
+task_1<-read.csv('water.txt', sep = '\t')
+task_1
+mortality_ci <-t.test(task_1$mortality)$conf.int
+mortality_ci
+```
+
+#4 
+Test whether southern and northern cities have the same average water hardness, input the p-value and name of the test.
+```{r}
+library(dplyr)
+library(ggplot2)
+ggplot(task_1, aes(x=hardness))+
+  geom_histogram()
+task_1
+south_countries <- filter(task_1, location=='South')$hardness
+north_countries <- filter(task_1, location=='North')$hardness
+wilcox.test(x=c(south_countries, north_countries), paired=F)
+```
+
+#5
+In a 5-year randomized study by Harward Medical School 11037 participants were taking aspirin every other day, another 11034 — placebo. The study was blind - the participants did not know what they are taking. 
+During 5 years 104 of aspirin-taking and 189 of placebo-taking participants had stroke. 
+Calculate a confidence interval for the difference in probabilities of stroke between aspirin and placebo groups.
+```{r}
+num_asp<-11037
+num_placebo<-11034
+
+prop.test(x=c(104, 189),
+          n=c(num_asp,num_placebo))
+```
+
+#9
+During the study of the effect of logging on biodiversity of Borneo forests data were collected on the number of different species of trees in 12 forests unaffected by logging:
+
+(22, 22, 15, 13, 19, 19, 18, 20, 21, 13, 13, 15),
+
+and 9 forests that are affected:
+
+(17, 18, 18, 15, 12, 4, 14, 15, 10).
+
+Test the hypothesis of equal average numbers of types trees in two kinds of forests using appropriate rank test. What is the p-value?
+```{r}
+library(jmuOutlier)
+perm.test(c(22, 22, 15, 13, 19, 19, 18, 20, 21, 13, 13, 15),
+            c(17, 18, 18, 15, 12, 4, 14, 15, 10))
+
+
+```
+
+#10
+On January 28 1986 Challenger exploded during takeoff, 7 astronauts died. During the investigation the main version was a malfunction of sealing rings. For 23 previous takeoffs we know air temperature and whether at least one of the rings malfunctioned (challenger.txt).
+Calculate 95% confidence interval for the difference between average temperatures in days with and without sealing ring malfunctions using bootstrap.
+```{r}
+library(boot)
+task_2<-read.csv('challenger.txt', sep = '\t')
+
+bootstrap_data<-boot(task_2, function(u,i) mean(u[i]), R = 100000)
+?boot
+```
+
+#14
+For 94 countries with female illiteracy level above 5% we have a proportion of illiterate women above 15 years old and average birthrate per woman (illiteracy.txt).
+Calculate Spearman's correlation coefficient for two features.
+```{r}
+install.packages("ggpubr")
+library(ggpubr)
+task_3 <-read.csv('illiteracy.txt', sep="\t")
+cor(task_3$Illit, task_3$Births, method="spearman")
+```
+
+#15 
+Is there a significant linear association between mortality rate and calcium concentration from #3? Calculate the p-value.
+```{r}
+m1<-lm(task_1$mortality ~ task_1$hardness)
+summary(m1)
+corelation<- cor(task_1$mortality, task_1$hardness, method = "pearson")
+n<-length(task_1$hardness)
+statistic <- corelation * sqrt(n-2)/sqrt(1-corelation**2)
+2*pt(statistic, n-2)
+```
+
+#16
+In GSS 2014 data 203 women and 239 men spend at least one evening per month at a bar; less than one per month 718 women and 515 men.
+Compare men and women at their bar habits, provide a conclusion (effect size, p-value, confidence interval). 
+```{r}
+prop.test(x=c(203,239),
+          n=c(718,515))
+```
+
+#17 
+Data from GSS 2014 about happiness and financial satisfaction:
+
+|               | Not satisfied | More or less satisfied | Satisfied |
+|---------------|---------------|------------------------|-----------|
+| Not too happy | 197	          | 111 	                 | 33        |
+| Quite happy   | 382           | 685                    | 331       |
+| Very happy    | 110	          | 342	                   | 333       |
+
+Are these two variables related? Prove with estimates. 
+```{r}
+data_matrix <- matrix(c(197, 111, 33, 382, 685, 331, 110, 342, 333), 
+                       nrow = 3, ncol = 3, 
+                       dimnames = list(c("Not too happy", "Quite happy", "Very happy"), 
+                                       c("Not satisfied", "More or less satisfied", "Satisfied")))
+task_4 <- as.data.frame(data_matrix)
+library(Hmisc)
+
+library(vcdExtra)
+GKgamma(task_4)
+```
+
+#21
+Electric warming blankets are used to restore the patients body temperature after surgery. We have 4 types of blankets, a standard, b0, and four experimental - b1, b2 and b3. For 41 patients we know the type of the blanket and time to recovery. 
+Is any of the experimental blanket types better than the standard? Provide evidence. 
+```{r}
+task_5 <- read.csv("blanket.txt", sep="\t")
+p<-data.frame(pair=c("0-1","0-2","0-3"),
+              raw=rep(NA, 3))
+task_5
+b0<-filter(task_5, Blanket=='b0')$Recovery.time
+b1<-filter(task_5, Blanket=='b1')$Recovery.time
+b2<-filter(task_5, Blanket=='b2')$Recovery.time
+b3<-filter(task_5, Blanket=='b3')$Recovery.time
+p$raw[1] <- perm.test(b0, b1)$p.value
+p$raw[2] <- perm.test(b0, b2)$p.value
+p$raw[3] <- perm.test(b0, b3)$p.value
+
+p$bonferroni <- p.adjust(p$raw, "bonferroni")
+p$holm       <- p.adjust(p$raw, "holm")
+p$BH         <- p.adjust(p$raw, "BH")
+p$BY         <- p.adjust(p$raw, "BY")
+
+```
+```{r}
+#install.packages("forecast")
+library(forecast)
+milk <- read.csv("milk.csv", header = TRUE)
+milk_ts <- ts(milk[,2], start = c(1962, 1), frequency = 12)
+milk_arima <- auto.arima(milk_ts)
+milk_arima
+
+
+```
+
+
+```{r}
+library(forecast)
+
+# Load the data
+milk <- read.csv("milk.csv", header = TRUE)
+
+# Convert the data to a time series
+milk_ts <- ts(milk$milk_production, start = c(1962, 1), frequency = 12)
+
+# Fit the ETS model using ets()
+milk_ets <- ets(milk_ts)
+
+# Print the selected model
+milk_ets
+
+```

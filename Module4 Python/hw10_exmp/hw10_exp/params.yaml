@@ -1,0 +1,39 @@
+data:
+  data_path: '/content'
+  main_data_path: '/content/movies_metadata.csv'       # path to main dataset
+  joined_data_name: 'None'                             # additional data you want to join to main_data
+  additional_data: 
+      {"credits":'/content/credits.csv',               
+      "ratings":'/content/ratings.csv',
+      "ratings_small":'/content/ratings_small.csv'}
+  use_categorical: 1
+  included_features: ['adult',
+                     'budget', 
+                     'popularity', 
+                     'revenue', 
+                     'runtime',
+                     'overview',
+                     'video', 
+                     'vote_count', 
+                     'years', 
+                     'target']
+experiment:
+  preprocessing_type: 2
+  pca: 0                                                    
+  n_components: 20
+  random_state: 22
+  test_size: 0.2
+  stratify: 1
+  classifier: 'RandomForest' #Choose between
+params_dectree:
+    {"criterion": 'gini',
+    "splitter": 'best',
+    "ccp_alpha": 0.0}
+
+params_logreg:
+    {
+    "penalty": 'l2',
+    }
+
+params_randomforest:
+  {"n_estimators": 300,}

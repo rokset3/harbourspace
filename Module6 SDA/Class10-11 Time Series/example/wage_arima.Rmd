@@ -1,0 +1,195 @@
+---
+title: "Average monthly real wage in Russia, pt.1"
+author: "Evgeniy Riabenko"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+Federal Statistical Service estimates the average real wage in Russia every month since January 1993 (source: http://sophist.hse.ru/hse/1/tables/WAG_M.htm). We need to forecast is for 3 years ahead. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=5.5, fig.width=10}
+library(forecast)
+library(tseries)
+library(lmtest)
+library(Hmisc)
+
+data <- read.csv("monthly-wage.csv", sep=",", stringsAsFactors=F)
+names(data)[1] <- "Date"
+names(data)[2] <- "Value"
+xname <- "Average real wage"
+
+data$Value <- as.numeric(data$Value)
+data$Date <- as.Date(as.yearmon(data$Date, format="%Y-%m"))
+tSeries <- ts(data = data$Value, start = as.numeric(c(format(data$Date[1], "%Y"), format(data$Date[1], "%m"))), freq = 12)
+
+plot(tSeries, type="l", ylab=xname, col="red")
+grid()
+
+D <- 36
+```
+
+Note that for the first 5 years the behaviour of the series is quite different from what we have later. 
+For the model not to overfit to irrelevant data, let's only keep the part starting from January 1999. Here it is: 
+```{r echo=F, fig.height=5.5, fig.width=10}
+tSeries <- window(tSeries, start=c(1999,1))
+
+plot(tSeries, type="l", ylab=xname, col="red")
+grid()
+```
+
+STL decomposition:
+```{r, echo=FALSE, fig.height=8, fig.width=10}
+plot(stl(tSeries, s.window="periodic"))
+```
+
+Box-Cox transformation with optimal $\lambda$:
+```{r, echo=FALSE, fig.width=10, fig.height=8}
+par(mfrow=c(2,1))
+plot(tSeries, ylab="Original series", xlab="", col="red")
+grid()
+
+LambdaOpt <- BoxCox.lambda(tSeries)
+plot(BoxCox(tSeries, LambdaOpt), ylab="Transformed series", xlab="", col="red")
+title(main=toString(round(LambdaOpt, 3)))
+grid()
+```
+
+Transformation clearly stabilizes the variance, so it makes sense to use it. 
+
+## ARIMA
+### Automatic model selection
+Using auto.arima:
+```{r, echo=FALSE}
+fit.auto <- auto.arima(tSeries, lambda=LambdaOpt, biasadj=T)
+fit.auto
+```
+ARIMA(2,1,1)(2,1,1)$_{12}$ is selected. Here are the residuals:
+```{r, echo=FALSE, fig.height=4.5, fig.width=10}
+res.auto <- residuals(fit.auto)
+plot(res.auto)
+```
+
+At the beginning residuals are not defined properly; let's cut the first 12 before proceeding with residual analysis. 
+```{r, echo=FALSE, fig.height=8, fig.width=10}
+res.auto <- res.auto[-c(1:12)]
+tsdisplay(res.auto)
+```
+
+```{r, echo=FALSE}
+p <- rep(0, 1, frequency(tSeries)*3)
+for (i in 1:length(p)){
+  p[i] <- Box.test(res.auto, lag=i, type = "Ljung-Box")$p.value
+}
+plot(p, xlab="Lag", ylab="p-values", ylim=c(0,1), main="Ljung-Box test")
+abline(h = 0.05, lty = 2, col = "blue")
+```
+
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+par(mfrow=c(1,2))
+qqnorm(res.auto)
+qqline(res.auto, col="red")
+hist(res.auto)
+```
+
+Hypothesis   | Test         | Result         | P-value
+------------ | ------------ | -------------- | ------------------------------
+Normality    | Shapiro-Wilk | rejected       | `r shapiro.test(res.auto)$p.value`
+Unbiasedness | Wilcoxon     |  rejected      | `r wilcox.test(res.auto)$p.value`
+Stationarity | KPSS         | not rejected   | `r kpss.test(res.auto)$p.value`
+
+
+### Manual model tuning
+The series is nonstationary (p<`r kpss.test(BoxCox(tSeries, LambdaOpt))$p.value`, KPSS test) and clearly seasonal; let's do seasonal differencing:
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(diff(BoxCox(tSeries, LambdaOpt), 12), type="l", col="red")
+grid()
+```
+Still not stationary (p<`r kpss.test(diff(BoxCox(tSeries, LambdaOpt), 12))$p.value`, KPSS test) with visible trend. Let's do another, nonseasonal differencing:
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(diff(diff(BoxCox(tSeries, LambdaOpt), 12), 1), type="l", col="red")
+grid()
+```
+The hypothesis of stationarity is now not rejected (p>`r kpss.test(diff(diff(BoxCox(tSeries, LambdaOpt), 12), 1))$p.value`, KPSS test).
+
+Look at ACF and PACF of the obtained series:
+
+```{r, echo=FALSE, fig.height=5.5, fig.width=12}
+par(mfrow=c(1,2))
+acf(diff(diff(BoxCox(tSeries, LambdaOpt), 12), 1), lag.max=5*12, main="")
+pacf(diff(diff(BoxCox(tSeries, LambdaOpt), 12), 1), lag.max=5*12, main="")
+```
+
+Autocorrelation is significantly different from 0 for lags 1, 8, 9, 10, 11, 12 and 36. 
+Since 36 is maximal significant seasonal lag, we could use $Q = 36/12 = 3$ as an initial approximation.
+Maximal significant lag before 12 is 11, hence the starting value $q=11$.
+
+Partial autocorrelation is significantly different from 0 for lags 1, 8, 9, 12, 36. 
+Following the same logic as above, we select initial values $P=3$, $p=9$.
+
+Next we'll look for the best models with auto.arima using d=1, D=1, max.p=10, max.q=10, max.P=4, max.Q=4 (where possible, we added 1 to every initial approximation found above just in case), and the parameters of the automatic model as starting points of the search (start.p=2, start.q=1, start.P=2, start.Q=1). 
+```{r echo=F}
+fit <- auto.arima(tSeries, d=1, D=1, max.p=10, max.q=11, max.P = 4, max.Q = 4, 
+                  start.p=2, start.q=1, start.P=2, start.Q=1, 
+                  lambda=LambdaOpt, biasadj=T)
+fit
+```
+
+The lowest AICc has ARIMA(3,1,0)(3,1,1)$_{12}$. Does it have good residuals?
+```{r, echo=FALSE, fig.height=4.5, fig.width=10}
+res <- residuals(fit)
+plot(res)
+```
+As before, we need to cut the first 12:
+```{r, echo=FALSE, fig.height=8, fig.width=10}
+res <- res[-c(1:12)]
+tsdisplay(res)
+```
+
+Ljung-Box test p-values for the residuals:
+```{r, echo=FALSE}
+p <- rep(0, 1, frequency(tSeries)*3)
+for (i in 1:length(p)){
+  p[i] <- Box.test(res, lag=i, type = "Ljung-Box")$p.value
+}
+plot(p, xlab="Lag", ylab="p-values", ylim=c(0,1), main="Ljung-Box test")
+abline(h = 0.05, lty = 2, col = "blue")
+```
+
+Q-Q plot and histogram of the residuals:
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+par(mfrow=c(1,2))
+qqnorm(res)
+qqline(res, col="red")
+hist(res)
+```
+
+Hypothesis   | Test         | Result         | P-value
+------------ | ------------ | -------------- | ------------------------------
+Normality    | Shapiro-Wilk |  rejected      | `r shapiro.test(res)$p.value`
+Unbiasedness | Wilcoxon     |     rejected   | `r wilcox.test(res)$p.value`
+Stationarity | KPSS         | not rejected   | `r kpss.test(res)$p.value`
+
+```{r, echo=FALSE, fig.height=8, fig.width=8}
+res_manual_orig_scale <- residuals(fit, type = "response")[-c(1:12)]
+res_auto_orig_scale <- residuals(fit.auto, type = "response")[-c(1:12)]
+ax_range <- range(c(res_manual_orig_scale, res_auto_orig_scale))
+
+plot(res_manual_orig_scale, res_auto_orig_scale, xlim=ax_range, ylim=ax_range, 
+     xlab = "Residuals of manually found model", ylab="Residuals of auto.arima model")
+grid()
+lines(c(ax_range[1], ax_range[2])*2, c(ax_range[1], ax_range[2])*2, col="red")
+```
+
+Automatically selected model has bigger AICc, and it's residuals are not better, so we'll use the manually tuned ARIMA.
+
+## Forecast
+The residuals of the model are not normal, so we should use bootstrap for prediction intervals, setting bootstrap=TRUE:
+```{r, echo=FALSE}
+fl <- forecast(fit, h=D, bootstrap=TRUE)
+print(fl)
+```
+```{r, echo=FALSE, fig.height=5.5, fig.width=10}
+plot(fl, ylab=xname, xlab="Year", col="red")
+```
+

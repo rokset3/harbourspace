@@ -1,0 +1,14 @@
+---
+title: "Classifiers perfomance"
+output: html_document
+---
+
+For 150 objects from the test set we predict a binary factor with two classifiers. 
+```{r}
+data <- read.table("classifiers.txt", header=T)
+err1 <- data$true.ans == data$c1.ans
+err2 <- data$true.ans == data$c2.ans
+
+ftable(err1, err2)
+```
+Is one classifier better than the other?

@@ -1,0 +1,93 @@
+---
+title: "Gene expression microarrays"
+output: html_document
+---
+```{r message=F}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
+Data source: http://www.ncbi.nlm.nih.gov/sites/GDSbrowser?acc=GDS4896
+
+Analysis of white blood cells from children with severe therapy-resistant asthma and those with controlled persistent mild asthma. Results provide insight into the molecular pathogenesis of these asthma pheontypes.
+
+Data:
+```{r}
+data <- read.csv("expression.csv", sep=";", row.names=1)
+head(data)
+```
+We are looking for the genes with different average expression levels between healthy controls and patients with severe asthma.
+
+## Solution
+First, let's remove all the probes that correspond to the unexplored regions of the genome that don't even have a name:
+```{r}
+data2 <- data %>%
+  subset(! Gene.title == "")
+```
+
+Calculate p-values with t-test: 
+```{r}
+p1  <- sapply(X = 1:dim(data)[1], FUN = function(x) t.test(data[x, grepl('Healthy.control', colnames(data))],
+                                                           data[x, grepl('Severe.asthma', colnames(data))])$p.value)
+```
+
+Calculate adjusted p-values:
+```{r}
+p1_FWER <- p.adjust(p1, "holm")
+p1_FDR <- p.adjust(p1, "BH")
+```
+
+Raw and adjusted p-values:
+```{r fig.width=12, fig.height=4}
+g1 <- ggplot() + aes(p1) + geom_histogram(fill='red', col='black', bins=50) + ggtitle('Raw')
+g2 <- ggplot() + aes(p1_FWER) + geom_histogram(fill='red', col='black', bins=50) + ggtitle('FWER-adjusted')
+g3 <- ggplot() + aes(p1_FDR) + geom_histogram(fill='red', col='black', bins=50) + ggtitle('FDR-adjusted')
+grid.arrange(g1, g2, g3, nrow = 1)
+
+g1 <- ggplot() + 
+  aes(x=seq(1, length(p1)), y=sort(p1)) + 
+  geom_point() + 
+  xlab("(i)") + ylab(expression(p[(i)])) + ggtitle('Raw')
+g2 <- ggplot() + 
+  aes(x=seq(1, length(p1)), y=sort(p1_FWER)) + 
+  geom_point() + 
+  xlab("(i)") + ylab(expression(tilde(p[(i)]))) + ggtitle('FWER-adjusted')
+g3 <- ggplot() + 
+  aes(x=seq(1, length(p1)), y=sort(p1_FDR)) + 
+  geom_point() + 
+  xlab("(i)") + ylab(expression(tilde(p[(i)]))) + ggtitle('FDR-adjusted')
+grid.arrange(g1, g2, g3, nrow = 1)
+```
+
+Number of genes with significantly different average expression levels (using Holm and Benjamini-Hochberg corrections):
+```{r}
+str(data[which(p1_FWER<0.05),c(1,56)])
+str(data[which(p1_FDR <0.05),c(1,56)])
+```
+
+Calculating a measure of effect size - Fold Change - taking into account that observations here are base 2 logarithms of expression levels:
+```{r fig.width=12}
+FC <- function(x,y){
+  x  <- as.numeric(x)
+  y  <- as.numeric(y)
+  2^(abs(mean(y) - mean(x))) * sign(mean(y)-mean(x))
+}
+fc1 <- sapply(X = 1:dim(data)[1], FUN = function(x) FC(data[x, 2:19], data[x, 39:55]))
+
+g1 <- ggplot() + aes(fc1[which(p1_FWER<0.05)]) + geom_histogram(fill='red', col='black', bins=20) + 
+  xlab('FC') + ggtitle('Fold change for genes significant with FWER<=0.05')
+g2 <- ggplot() + aes(fc1[which(p1_FDR <0.05)]) + geom_histogram(fill='red', col='black', bins=100) + 
+  xlab('FC') + ggtitle('Fold change for genes significant with FDR<=0.05')
+grid.arrange(g1, g2, nrow = 1)
+```
+
+Big differences that are significant with $FWER\leq0.05$:
+```{r}
+str(data[which(p1_FWER <= 0.05 & abs(fc1)>1.5),c(1,56)])
+```
+
+Big differences that are significant with $FDR\leq0.05$:
+```{r}
+str(data[which(p1_FDR <= 0.05 & abs(fc1)>1.5),c(1,56)])
+```
+

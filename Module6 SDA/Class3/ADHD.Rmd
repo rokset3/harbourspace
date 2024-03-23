@@ -1,0 +1,33 @@
+---
+title: "Methylphenidate for ADHD"
+output: html_document
+---
+```{r echo=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+theme_set(theme_bw())
+```
+24 ADHD/MR (18 boys and 6 girls) participated in this study. They took either Methylphenidate of placeebo for week, and took the delay of gratification (DOG) test that measures the ability to suppress or delay impulsive behavioral responses. On the second week the drug and placebo groups were reversed, and after a week the subjects took DOG test again. 
+
+What is the effect of the drug?
+
+```{r, fig.height=5, fig.width=5}
+att <- read.table("ADHD.txt", header=T)
+att %>%
+  ggplot(aes(x=D0, y=D60)) +
+  geom_point() +
+  geom_abline(slope=1, intercept = 0, col='red') +
+  xlim(0,100) + ylim(0,100) +
+  xlab('Placebo') + ylab('Methylphenidate')
+```
+
+
+`
+**************
+Pearson D.A, Santos C.W., Casat C.D., et al. (2004). **Treatment effects of methylphenidate on cognitive functioning in children with mental retardation and ADHD.** Journal of the American Academy of Child and Adolescent Psychiatry, 43(6), 677–685.   
+```{r}
+?t.test
+t.test(att$D0, att$D60, paired=TRUE)
+
+
+```

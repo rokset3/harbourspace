@@ -1,0 +1,61 @@
+---
+title: "Speed of light"
+output: html_document
+---
+```{r echo=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+theme_set(theme_bw())
+```
+
+The following dataset consists of the results of a classic Michelson experiment (1880) - speed of light was measured with a rotating mirror. There are 100 observations:
+```{r}
+speed <- scan("speed.txt")
+
+ggplot() + 
+  aes(x=speed) + 
+  geom_histogram(color='black', fill='red', bins=30) +
+  xlab('Measured speed of light, km/h') 
+```
+
+Are they normally distributed?
+
+Ecdf and the best fitting normal cdf in the same axis:
+```{r}
+data.frame(x=speed) %>%
+  ggplot(aes(x=x)) +
+  stat_ecdf(col='blue') +
+  stat_function(fun = pnorm, args = list(mean=mean(speed), sd=sd(speed)), col='red')  +
+  xlab('Measured speed of light, km/h') +
+  ylab('Empirical and fitted normal\ndistribution functions')
+```
+
+**Plot nonparametric sample density estimate and the best fitting normal density in the same axes (use `ggplot`, `geom_density`, `stat_function`).**
+```{r}
+data.frame(x=speed) %>%
+  ggplot(aes(x=x)) +
+  geom_density(col='blue') +
+  stat_function(fun = dnorm, args = list(mean=mean(speed), sd=sd(speed)), col='red')  +
+  xlab('Measured speed of light, km/h') +
+  ylab('Empirical and fitted normal\ndistribution functions')
+  
+?geom_density
+```
+
+**Do the measurements look normal on q-q plot? (try `stat_qq`, `stat_qq_line`)**
+```{r, fig.height=7, fig.width=7}
+data.frame(x=speed) %>%
+  ggplot(aes(sample=speed)) +
+  stat_qq() +
+  stat_qq_line() 
+# your code here
+```
+
+**Check whether the measurements are normal using statistical test**
+```{r}
+shapiro.test(data.frame(x=speed)$x)
+#data is normal
+```
+
+**************
+Michelson A.A. **Experimental determination of the velocity of light made at the U.S. Naval Academy, Annapolis.** Astronomical Papers, 1, 109-145, 1880.

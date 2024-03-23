@@ -1,0 +1,99 @@
+---
+title: "Bullshit"
+output: html_document
+---
+
+```{r echo=F}
+addtrend <- function(x, y){
+  y <- y[order(x)]
+  x <- sort(x)
+  smoothed <- loess.smooth(x, y)
+  with(smoothed, lines(x, y, col = "blue", lwd=3))
+}
+
+PlotBulshitVs <- function(y.name) {
+  x <- d$MeanBullshit
+  y <- d[, y.name]
+  rm <- which(is.na(x) | is.na(y))
+  if (length(rm) > 0) {
+    x <- x[-rm]
+    y <- y[-rm]
+  }
+  p.val <- cor.test(x,y,method="spearman")$p.value
+  par(mar=c(4.3,4.3,2.1,0.1) + .1, mfrow=c(1,1))
+  plot(x, jitter(y, amount=0.1), pch=19, col=rgb(255,0,0,100,maxColorValue = 255),
+       main=paste0('ρ=', round(cor.test(x,y,method="spearman")$estimate, 3), ', p=', round(cor.test(x,y,method="spearman")$p.value, 4)),
+       xlab="Bullshit Receptivity", ylab=y.name)
+  m <- lm(y~x)
+  lines(c(0,6), m$coefficients[1] + m$coefficients[2] * c(0,6), lwd=3)
+  addtrend(x,y)
+}
+```
+
+Original study: http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0153419
+
+"Bullshit is used as a technical term, defined as communicative expression that lacks plausibility and truth." Example:
+
+* Hidden meaning transforms unparalleled abstract beauty.
+* Imagination is inside exponential space time events.
+
+## Data
+```{r echo=F}
+d <- read.csv("bullshit.csv")
+```
+
+Sample: 196 US citizens (43.4% women, 36.4 years old on average) recruited on Amazon Mechanical Turk.
+
+Assignment:
+
+1. Rate the profoundness of each statement on a 5-point Likert-scale ranging from 1 - not at all profound, through 2 - somewhat profound, 3 - fairly profound, 4 - definitely profound, to 5 - very profound.
+
+2. Rate the favorableness of three potential Democratic candidates and three Republican candidates for US president on a 5-point Likert scale ranging from 1 - very unfavorable, through 2 - somewhat unfavorable, 3 - neither unfavorable nor favorable, 4 - somewhat favorable, to 5 - very favorable. 
+
+3. Estimate theirself political liberalism/conservatism using 7-point Likert scale (1 - liberal, 7 - conservative).
+
+Some of the statements for the evaluation were bullshit, some - simple mundane statements (e.g., "A wet person does not fear the rain").
+
+## Analysis
+
+* For every subject the average bullshit receptiveness was calculated.
+
+* Correlations of bullshit receptiveness with conservativeness and favourableness values were estimated with Spearman coefficient.
+
+* To test if it's significantly different from 0, t-test was used.
+
+## Results
+
+There are siginificantly large positive correlations between receiptiveness to bullshit and:
+
+* favorable views of Cruz, Rubio, Trump
+
+* conservatism.
+
+## Raw data
+```{r fig.height=5, fig.width=5, warning=F, echo=F}
+PlotBulshitVs("Conservatism")
+PlotBulshitVs("FavorablenessCruz")
+PlotBulshitVs("FavorablenessRubio")
+PlotBulshitVs("FavorablenessTrump")
+PlotBulshitVs("FavorablenessClinton")
+PlotBulshitVs("FavorablenessSanders")
+PlotBulshitVs("FavorablenessOMalley")
+```
+
+## Criticism
+
+* Sample is not representative of the population
+* Unbalancedness:
+
+```{r echo=F}
+hist(d$Conservatism, breaks=seq(0.5, 7.5, by=1), col='red', main='', xlab='Conservatism')
+box()
+```
+
+* One of the features is not continuous
+
+Overall, plots and coefficients tell different stories.
+
+******************
+Pfattheicher, S., & Schindler, S. (2016). Misperceiving bullshit as profound is associated with favorable views of Cruz, Rubio, Trump and conservatism. PLoS ONE, 11(4), 1–7. 

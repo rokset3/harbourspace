@@ -1,0 +1,81 @@
+---
+title: "Mythbusters: back of a hand"
+output: html_document
+---
+## Part 1
+In episode 5 of season 13 of Mythbusters they tested the expression "know something like the back of one's hand". 
+12 subjects tried to select a photo of their hand from 10 similar pictures.
+
+11 of 12 subjects selected their own hand. 
+
+$H_0$: subjects select pictures at random ($p=0.1$).
+
+$H_1$: subjects are able to select a picture of their own hand better than at random ($p>0.1$).
+
+Exact binomial test to test $H_0$ against $H_1$
+```{r, echo=FALSE}
+binom.test(11, 12, p = 0.1, alternative = "greater")
+```
+What kind of confidence interval does it provide?
+
+Likelihood ratio based 95% confidence interval (`prop.test`)
+```{r, warning=FALSE}
+prop.test(11, 12, conf.level=0.95)$conf.int
+```
+
+**Get 95% Wilson's confidence interval. (`scoreci` from "PropCIs" or `binconf` from "Hmisc")**
+```{r}
+library("PropCIs")
+scoreci(11, 12, 0.95)
+```
+
+**Calculate p-values for Wald and score tests. Compare all the results. **
+```{r}
+num_successes = 11
+num_experiments = 12
+pi_hat = num_successes/num_experiments
+pi_0 = 0.1
+z_statistic = (pi_hat - pi_0)/sqrt(pi_hat*(1-pi_hat)/num_experiments)
+p <- 1 - pnorm(z_statistic)
+
+
+
+pi_hat_2 = 7/12
+pi_hat_gen = mean(pi_hat_2, pi_hat)
+pi_hat_gen
+z_twosamples = (pi_hat_2 - pi_hat)/sqrt(pi_hat_gen*(1-pi_hat_gen)*(1/6))
+
+z_twosamples
+
+1-pnorm(z_twosamples)
+```
+ 
+## Part 2
+The same experiment was run with the pictures of palms. 7 of 12 subjects selected a picture of their own palm. 
+
+$H_0$: subjects select pictures at random ($p=0.1$).
+
+$H_1$: subjects are able to select a picture of their own palm better than at random ($p>0.1$).
+
+```{r}
+binom.test(7, 12, p=0.1, alternative = "greater")
+```
+
+Could we claim that everyone knows a back of their hand better that a palm?
+Let's compare the results of the experiments.
+Those are the same subjects, but we have no information in one-to-one correspondence of their answers. 
+
+** Calculate a p-value for independent two-sample z-test using one-sided alternative.**
+```{r}
+# your code here
+```
+
+**Calculate 95% Wilson's confidence interval (use `diffscoreci` from "PropCIs"), and invert it with "invertCI.R".**
+```{r}
+# your code here
+```
+
+**Can we still use paired sample test? How many different configurations of one-to-one correspondence are possible? Calculate p-values and confidence intervals using them.**
+```{r}
+# your code here
+```

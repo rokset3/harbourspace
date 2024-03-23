@@ -1,0 +1,425 @@
+---
+title: "Assignment3"
+author: "TemmirlanZholaman"
+date: "2023-02-18"
+output: html_document
+---
+
+  
+setwd('C:\\Users\\Temirlan\\Desktop\\HarbourSpace\\Module6 SDA\\ass3')
+```
+
+Use boxplots to remove outliers in the data
+```{r echo=F}
+raw_data <-read_excel('diamonds.xlsx')
+summary(raw_data)
+raw_data<-filter(raw_data, 
+                 y<30, #these values were obtained through inspection on boxplots
+                 z<25, 
+                 x>0)
+```
+
+```{r}
+data<-raw_data
+data$size <- ifelse(data$carat < 0.3 , "small",
+                    ifelse(data$carat> 1, "large", "medium"))
+data_2 <- subset(data, select=-c(carat))
+data<- subset(data, select=-c(size))
+head(data, 5)
+```
+So the model of the experiment will contain regression analysis with including carat as a categorical feature (size = "small|medium"large), or as a continuous feature. Let's start with EDA.
+
+```{r, echo=FALSE, fig.height=15, fig.width=15, warning=F, message=F}
+data %>% 
+  ggpairs(mapping = aes(alpha=0.5, fill='red'))
+```
+From distribution of data I would take notes on few things:
+*Distribution of carat in not normal, transformation would be great
+*Same problem with price, need to transform it
+*x,y,z coordinates clearly have some outliers. May work on it further 
+*some of the features are highly correlated to price, such as x, y, z. Carat is has some kind of exponential/quadratical dependency, and this should be taken into account.
+```{r}
+g1 <- data %>%
+  ggplot(aes(x=price)) +
+  geom_histogram(fill='red', col='black', bins=50)
+
+g2 <- data %>%
+  ggplot(aes(x=log(price))) +
+  geom_histogram(fill='red', col='black', bins=50)
+
+grid.arrange(g1, g2, nrow=1)
+```
+ $\frac{\max y}{\min y}=$ `r max(data$price)/min(data$price)` $>10$, => Box-Cox transformation:
+```{r, echo=FALSE, warning=FALSE}
+par(mfrow=c(1,1))
+boxcox(lm(price~., data=data))
+```
+I will be using lambda = 0 for price transformation
+```{r}
+data$logprice <- log(data$price)
+data$price <- NULL
+head(data)
+```
+Lets check other features, such as carat
+```{r}
+g1 <- data %>%
+  ggplot(aes(x=carat)) +
+  geom_histogram(fill='red', col='black', bins=50)
+
+g2 <- data %>%
+  ggplot(aes(x=log(carat))) +
+  geom_histogram(fill='red', col='black', bins=50)
+
+grid.arrange(g1, g2, nrow=1)
+```
+$\frac{\max y}{\min y}=$ `r max(data$carat)/min(data$carat)` $>10$, => Box-Cox transformation for carat:
+
+I would use box-cox transformation with a direct lambda value
+```{r, echo=FALSE, warning=FALSE}
+par(mfrow=c(1,1))
+b <- boxcox(lm(carat ~. ,data=data))
+lambda <- b$x[which.max(b$y)]
+lambda
+data$logcarat <- (data$carat ^ lambda - 1) / lambda
+data$carat <- NULL
+```
+
+### Model 1
+Linear model with all the features.
+```{r, echo=FALSE}
+m1 <- lm(logprice ~., data=data)
+summary(m1)
+```
+
+Residuals visual inspection:
+```{r, echo=FALSE, fig.height=7, fig.width=10}
+par(mfrow=c(2,2))
+data
+
+qqnorm(residuals(m1))
+qqline(residuals(m1), col="red")
+grid()
+
+plot(data$logcarat, rstandard(m1), xlab="logcarat", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$logcarat, rstandard(m1))
+grid()
+
+plot(data$x, rstandard(m1), xlab="x", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$x, rstandard(m1))
+grid()
+
+plot(data$y, rstandard(m1), xlab="y", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$y, rstandard(m1))
+grid()
+
+plot(data$z, rstandard(m1), xlab="z", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$z, rstandard(m1))
+grid()
+```
+Things I have noticed:
+* there are outliers in x, y, z
+* there might be a small quadratic dependence in x, y, z, and carat.
+* q-q residuals plot shows some normality, but again, outliers.
+Lets try model with quadratic features
+### Model 2
+Adding to the model the square of x, y, z, & carat.
+```{r, echo=FALSE}
+m2 <- lm(logprice ~ . + I(x^2) + I(y^2) + I(z^2) + I(logcarat^2) , data=data)
+```
+```{r, echo=FALSE, fig.height=7, fig.width=10}
+par(mfrow=c(2,2))
+
+qqnorm(residuals(m2))
+qqline(residuals(m2), col="red")
+grid()
+
+plot(data$logcarat, rstandard(m2), xlab="logCarat", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$logcarat, rstandard(m2))
+grid()
+
+plot(data$logcarat^2, rstandard(m2), xlab="logCarat^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$logcarat^2, rstandard(m2))
+grid()
+
+
+plot(data$x, rstandard(m2), xlab="x", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$x, rstandard(m2))
+grid()
+
+plot(data$x^2, rstandard(m2), xlab="x^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$x^2, rstandard(m2))
+grid()
+
+
+plot(data$y, rstandard(m2), xlab="y", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$y, rstandard(m2))
+grid()
+
+plot(data$y^2, rstandard(m2), xlab="y^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$y^2, rstandard(m2))
+grid()
+
+
+plot(data$z, rstandard(m2), xlab="z", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$z, rstandard(m2))
+grid()
+
+plot(data$z^2, rstandard(m2), xlab="z^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$z^2, rstandard(m2))
+grid() 
+```
+
+Follow-up tests for the residuals:
+
+Test                                        | p-value 
+------------------------------------------- | ---------
+Shapiro-Wilk for first 5000 samples         | `r shapiro.test(residuals(m2)[1:5000])$p.value`
+Breusch-Pagan                               | `r bptest(m2)$p.value`
+Anderson-Darling test for full sample size  | `r ad.test(residuals(m2))$p.value`
+They are not normal and heteroscedastic, so we’ll need to use White’s correction as well as adjustment for multiplicity when estimating the significance of the predictors:
+```{r, echo=FALSE}
+s2 <-summary(m2)
+s2$coefficients <- cbind(s2$coefficients, mycoeftest(m2, "HC0"))
+dimnames(s2$coefficients)[[2]][5] <- "Adjusted p-value"
+print(s2)
+```
+Lets remove table and logcarat^2.
+### Model3
+```{r}
+m3 <- lm(logprice ~ cut + color + clarity + depth + x + y + z + logcarat + I(x^2)+ I(y^2)+ I(z^2),
+         data=data)
+s3 <- summary(m3)
+```
+
+```{r, echo=FALSE, fig.height=7, fig.width=10}
+par(mfrow=c(2,2))
+
+qqnorm(residuals(m3))
+qqline(residuals(m3), col="red")
+grid()
+
+plot(data$logcarat, rstandard(m3), xlab="logCarat", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$logcarat, rstandard(m3))
+grid()
+
+
+plot(data$x, rstandard(m3), xlab="x", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$x, rstandard(m3))
+grid()
+
+plot(data$x^2, rstandard(m3), xlab="x^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$x^2, rstandard(m3))
+grid()
+
+
+plot(data$y, rstandard(m3), xlab="x", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$x, rstandard(m3))
+grid()
+
+plot(data$y^2, rstandard(m3), xlab="y^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$y^2, rstandard(m3))
+grid()
+
+
+plot(data$z, rstandard(m3), xlab="z", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$z, rstandard(m3))
+grid()
+
+plot(data$z^2, rstandard(m3), xlab="z^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data$z^2, rstandard(m3))
+grid()
+```
+check for other interactions
+
+```{r, echo=FALSE}
+add1(m3, ~ .^2, test="F")
+```
+Im going to stick to the current predictors, since I dont like other interactions.
+Lets compare m2 and m3
+```{r}
+waldtest(m1, m2, vcov = vcovHC(m2, type = "HC0"))
+waldtest(m3, m2, vcov = vcovHC(m2, type = "HC0"))
+```
+M2 is significantly better than M1 and worse than M3. So we keep going with model 3
+
+
+### Cook's distance
+```{r, echo=FALSE, fig.width=10}
+par(mfrow=c(1,2))
+plot(fitted(m3), cooks.distance(m3), xlab="Fitted log price", ylab="Cook's distance", col=mycol, pch=19)
+lines(c(-100,100), c(0.015, 0.015), col="red")
+plot(data$logprice, cooks.distance(m3), xlab="Log price", ylab="Cook's distance", col=mycol, pch=19)
+lines(c(-100,100), c(0.015, 0.015), col="red")
+```
+
+there are `r length(cooks.distance(m3)[cooks.distance(m3)>0.005])` observation higher than 0.005 cook's distance. lets remove them all
+### Model4 on excluded datapoints
+```{r, echo=FALSE}
+excluded_data <- rbind(data, data[cooks.distance(m3)>0.005,])
+data_cooks <-data[cooks.distance(m3)<=0.005,]
+m4 <- lm(logprice ~ cut + color + clarity + depth + x + y + z + logcarat + I(x^2)+ I(y^2)+ I(z^2),
+         data=data_cooks)
+```
+Comparing how coefficients changed
+```{r}
+res <- cbind(coefficients(m3), coefficients(m4))
+colnames(res) <- c("All data", "Filtered data")
+res
+```
+x,y,z changed significantly. we stay with model 4.
+
+
+```{r, echo=FALSE, fig.height=7, fig.width=10}
+par(mfrow=c(2,2))
+
+qqnorm(residuals(m4))
+qqline(residuals(m4), col="red")
+grid()
+
+plot(data_cooks$logcarat, rstandard(m4), xlab="logCarat", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_cooks$logcarat, rstandard(m4))
+grid()
+
+
+
+plot(data_cooks$x, rstandard(m4), xlab="x", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_cooks$x, rstandard(m4))
+grid()
+
+plot(data_cooks$x^2, rstandard(m4), xlab="x^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_cooks$x^2, rstandard(m4))
+grid()
+
+plot(data_cooks$y, rstandard(m4), xlab="y", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_cooks$y, rstandard(m4))
+grid()
+
+plot(data_cooks$y^2, rstandard(m4), xlab="y^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_cooks$y^2, rstandard(m4))
+grid()
+
+
+plot(data_cooks$z, rstandard(m4), xlab="z", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_cooks$z, rstandard(m4))
+grid()
+
+plot(data_cooks$z^2, rstandard(m4), xlab="z^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_cooks$z^2, rstandard(m4))
+grid() 
+```
+Everything looks better now.
+So final model for having carat as a continuous feature looks like following:
+## Results
+The final model (#4) is build using `r dim(data_cooks)[1]` of the initial 53,940 datapoints; it explains `r 100*summary(m4)$r.squared`% of the variation in the logarithm of the price.
+
+```{r, echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(1,1))
+plot(data_cooks$logprice, fitted(m4), xlab="Log price", ylab="Predicted log price", pch=19, col=mycol, 
+     xlim=c(min(data_cooks$logprice),max(data_cooks$logprice)),
+     ylim=c(min(data_cooks$logprice),max(data_cooks$logprice))
+     )
+lines(c(0,10), c(0,10), col="red")
+points(excluded_data$logprice, predict(m4, excluded_data), col="red", pch=19)
+grid()
+```
+
+### Now working with carat as a categorical feature:
+```{r}
+
+data_2 <- data_cooks
+data_2$size <- ifelse(exp(data_2$logcarat) < 0.3 , "small",
+                    ifelse(exp(data_2$logcarat)> 1, "large", "medium"))
+data_2$logcarat <- NULL
+data_2
+data_2$price <- NULL
+head(data_2)
+```
+### Model 5
+For the sake of simplicity, I am going to use the same model for comparison, since the objective of study is to understand, whether having size feature changes results
+```{r, echo=FALSE}
+m5 <- lm(logprice ~ cut + color + clarity + depth + x + y + z + size + I(x^2)+ I(y^2)+ I(z^2),
+         data=data_2)
+```
+Residuals visual inspection:
+```{r, echo=FALSE, fig.height=7, fig.width=10}
+par(mfrow=c(2,2))
+
+qqnorm(residuals(m5))
+qqline(residuals(m5), col="red")
+grid()
+
+plot(data_2$x, rstandard(m5), xlab="x", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_2$x, rstandard(m5))
+grid()
+
+plot(data_2$x^2, rstandard(m5), xlab="x^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_2$x^2, rstandard(m5))
+grid()
+
+plot(data_2$y, rstandard(m5), xlab="y", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_2$y, rstandard(m5))
+grid()
+
+plot(data_2$y^2, rstandard(m5), xlab="y^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_2$y^2, rstandard(m5))
+grid()
+
+plot(data_2$z, rstandard(m5), xlab="z", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_2$z, rstandard(m5))
+grid()
+
+plot(data_2$z^2, rstandard(m5), xlab="z^2", ylab="Standardized residuals", col=mycol, pch=19)
+addtrend(data_2$z^2, rstandard(m5))
+grid()
+```
+
+
+
+### Cook's distance
+### Model 6 on subset chosen based on Cook's distance
+
+```{r, echo=FALSE, fig.width=10}
+par(mfrow=c(1,2))
+plot(fitted(m5), cooks.distance(m5), xlab="Fitted log price", ylab="Cook's distance", col=mycol, pch=19)
+lines(c(-100,100), c(0.015, 0.015), col="red")
+plot(data_2$logprice, cooks.distance(m5), xlab="Log price", ylab="Cook's distance", col=mycol, pch=19)
+lines(c(-100,100), c(0.015, 0.015), col="red")
+```
+
+there are `r length(cooks.distance(m5)[cooks.distance(m5)>0.005])` observation higher than 0.005 cook's distance. lets remove them all
+### Model 6 on excluded datapoints
+```{r, echo=FALSE}
+excluded_data_2 <- rbind(data_2, data_2[cooks.distance(m5)>0.005,])
+data_cooks_2 <-data_2[cooks.distance(m5)<=0.005,]
+m6 <- lm(logprice ~ cut + color + clarity + depth + x + y + z + size + I(x^2)+ I(y^2)+ I(z^2),
+         data=data_cooks_2)
+```
+
+Comparing how coefficients changed
+```{r}
+res <- cbind(coefficients(m5), coefficients(m6))
+colnames(res) <- c("All data", "Filtered data")
+res
+```
+Coefficients for x y z changed significantly So i am sticking to this model
+## Results
+The final model (#6) is build using `r dim(data_cooks_2)[1]` of the initial 53,940 datapoints; it explains `r 100*summary(m6)$r.squared`% of the variation in the logarithm of the hourly wage.
+
+```{r, echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(1,1))
+plot(data_cooks_2$logprice, fitted(m6), xlab="Log price", ylab="Predicted log price", pch=19, col=mycol, 
+     xlim=c(min(data_cooks_2$logprice),max(data_cooks_2$logprice)),
+     ylim=c(min(data_cooks_2$logprice),max(data_cooks_2$logprice))
+     )
+lines(c(0,10), c(0,10), col="red")
+points(excluded_data_2$logprice, predict(m6, excluded_data_2), col="red", pch=19)
+grid()
+```
+
+### Comparison of using carat as a size feature or as a continuous
+```{r}
+summary(m4)$r.squared - summary(m6)$r.squared
+
+```
+### Conclusion
+`r 100*summary(m4)$r.squared` R-squared value for Model 4 vs `r `100*summary(m6)$r.squared` for Model 6. So using a categorical feature for size does not affect data that much. But there is a still a difference. 

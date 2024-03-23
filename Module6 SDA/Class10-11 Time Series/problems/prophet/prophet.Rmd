@@ -1,0 +1,185 @@
+---
+title: "Prophet"
+author: "Evgeniy Riabenko"
+date: "5/13/2018"
+output: html_document
+---
+
+```{r message=F}
+library(prophet)
+library(ggplot2)
+library(zoo)
+library(dplyr)
+```
+
+```{r}
+df <- read.csv('example_wp_peyton_manning.csv')
+df$y <- log(df$y)
+```
+
+```{r}
+m <- prophet(df, interval.width = 0.95)
+
+future <- make_future_dataframe(m, periods = 365)
+tail(future)
+
+fcst <- predict(m, future)
+tail(fcst[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+plot(m, fcst)
+prophet_plot_components(m, fcst)
+```
+```{r}
+df.cv <- cross_validation(m, horizon = 365, units = 'days')
+head(df.cv)
+```
+
+## Calendar effects
+```{r}
+playoffs <- data_frame(
+  holiday = 'playoff',
+  ds = as.Date(c('2008-01-13', '2009-01-03', '2010-01-16',
+                 '2010-01-24', '2010-02-07', '2011-01-08',
+                 '2013-01-12', '2014-01-12', '2014-01-19',
+                 '2014-02-02', '2015-01-11', '2016-01-17',
+                 '2016-01-24', '2016-02-07')),
+  lower_window = 0,
+  upper_window = 1
+)
+superbowls <- data_frame(
+  holiday = 'superbowl',
+  ds = as.Date(c('2010-02-07', '2014-02-02', '2016-02-07')),
+  lower_window = 0,
+  upper_window = 1
+)
+holidays <- bind_rows(playoffs, superbowls)
+
+m2 <- prophet(df, holidays = holidays, interval.width = 0.95)
+fcst2 <- predict(m2, future)
+plot(m2, fcst2)
+prophet_plot_components(m2, fcst2)
+```
+
+## Additional regressors
+```{r}
+nfl_sunday <- function(ds) {
+  dates <- as.Date(ds)
+  month <- as.numeric(format(dates, '%m'))
+  as.numeric((weekdays(dates) == "Sunday") & (month > 8 | month < 2))
+}
+df$nfl_sunday <- nfl_sunday(df$ds)
+
+m3 <- prophet(holidays = holidays, interval.width = 0.95)
+m3 <- add_regressor(m3, 'nfl_sunday')
+m3 <- fit.prophet(m3, df)
+
+future$nfl_sunday <- nfl_sunday(future$ds)
+fcst3 <- predict(m3, future)
+plot(m3, fcst3)
+prophet_plot_components(m3, fcst3)
+```
+
+## Saturation
+Prophet has damped trend too.
+```{r}
+df <- read.csv('example_wp_R.csv')
+df$y <- log(df$y)
+df$cap <- 8.5
+
+m <- prophet(df, growth = 'logistic')
+future <- make_future_dataframe(m, periods = 1826)
+future$cap <- 8.5
+fcst <- predict(m, future)
+plot(m, fcst)
+prophet_plot_components(m, fcst)
+```
+
+Also works with minimum:
+```{r}
+df$y <- 10 - df$y
+df$cap <- 6
+df$floor <- 1.5
+future$cap <- 6
+future$floor <- 1.5
+m <- prophet(df, growth = 'logistic')
+fcst <- predict(m, future)
+plot(m, fcst)
+prophet_plot_components(m, fcst)
+```
+
+## Outliers
+```{r echo=F}
+df <- read.csv('example_wp_R.csv')
+df$y <- log(df$y)
+m_pure <- prophet(df)
+future <- make_future_dataframe(m_pure, periods = 1096)
+fcst_pure <- predict(m_pure, future)
+plot(m_pure, fcst_pure)
+prophet_plot_components(m_pure, fcst_pure)
+```
+
+Type 1:
+```{r}
+df <- read.csv('example_wp_R_outliers1.csv')
+df$y <- log(df$y)
+m <- prophet(df)
+future <- make_future_dataframe(m, periods = 1096)
+forecast <- predict(m, future)
+plot(m, forecast);
+prophet_plot_components(m, fcst)
+```
+
+Need to be removed:
+```{r}
+outliers <- (as.Date(df$ds) > as.Date('2010-01-01') & as.Date(df$ds) < as.Date('2011-01-01'))
+df$y[outliers] = NA
+m <- prophet(df)
+forecast <- predict(m, future)
+plot(m, forecast)
+prophet_plot_components(m, fcst)
+```
+
+Type 2:
+```{r}
+df <- read.csv('example_wp_R_outliers2.csv')
+df$y = log(df$y)
+m <- prophet(df)
+future <- make_future_dataframe(m, periods = 1096)
+forecast <- predict(m, future)
+plot(m, forecast)
+prophet_plot_components(m, fcst)
+```
+
+Need to be removed too:
+```{r}
+outliers <- (as.Date(df$ds) > as.Date('2015-06-01')
+             & as.Date(df$ds) < as.Date('2015-06-30'))
+df$y[outliers] = NA
+m <- prophet(df)
+forecast <- predict(m, future)
+plot(m, forecast)
+prophet_plot_components(m, fcst)
+```
+
+## Monthly data
+Not that great for monthly data:
+```{r}
+df <- read.csv("monthly-wage.csv", sep=",", stringsAsFactors=F)[-c(1:72),]
+names(df) <- c('ds', 'y')
+df$y <- log(df$y)
+df$ds <- as.Date(as.yearmon(df$ds, format="%Y-%m"))
+m <- prophet(df, interval.width = 0.95)
+future <- make_future_dataframe(m, periods = 36, freq = 'month')
+fcst <- predict(m, future)
+plot(m, fcst)
+prophet_plot_components(m, fcst)
+```
+
+```{r}
+m_exp <- m
+m_exp$history$y <- exp(m_exp$history$y)
+fcst_exp <- fcst
+fcst_exp$yhat <- exp(fcst_exp$yhat)
+fcst_exp$yhat_lower <- exp(fcst_exp$yhat_lower)
+fcst_exp$yhat_upper <- exp(fcst_exp$yhat_upper)
+plot(m_exp, fcst_exp)
+```

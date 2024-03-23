@@ -1,0 +1,119 @@
+---
+title: "Central Limit Theorem"
+author: "Temirlan Zholaman"
+output: html_document
+---
+
+My favorite distribution is $$F\left(x\right)= \Phi(\frac{x - \mu}{\sigma})$$
+For this assignment I'm using parameter values $$\mu = 0, \sigma = 1$$
+
+Let's take a sample of size 100 from that distribution:
+```{r}
+library(dplyr)
+sample<- rnorm(n=100, mean=0, sd=1)
+```
+
+Here is the histogram of the sample:
+```{r}
+library(ggplot2)
+ggplot()+
+  aes(x=sample)+
+  geom_histogram(color='black', fill='red', bins=30)+
+  xlab('100 samples from standard normal distribution')
+  
+```
+
+Here is a smooth sample estimate of the density, and the actual population density for comparison:
+```{r}
+data.frame(x=sample) %>%
+  ggplot(aes(x=x)) +
+  geom_density(col='blue') +
+  stat_function(fun = dnorm, args = list(mean=0, sd=1), col='red')  +
+  xlab('Sample data')
+  
+```
+
+Central limit theorem states that the distribution of a sample mean gets normal as sample size increases. Let's test that. For several values of $n$ we'll take samples of size $n$ from our distribution 1000 times, and calculate sample mean for each sample. We'll use histograms and kernel density estimates to compare the distribution of those sample means to the normal approximation suggested by the central limit theorem. 
+
+CLT states that sample mean has the same expectation as the original variable, and the variance $\mathbb{D}\bar{X}_n=\frac{\mathbb{D}X}{n} = \frac{\sigma^2}{n}$
+
+For n=5:
+```{r}
+#plot of the histogram, kernel density estimate and a normal approximation from CLT to compare 
+n<-5
+times <-1000
+means<- rep(0, times)
+length(1:1000)
+for (i in 1:1000){
+  means[i] <- mean(rnorm(n=n, mean=0, sd=1))
+}
+var_sample <-1/n
+sd_sample <- sqrt(var_sample) 
+ggplot()+
+  aes(x=means)+
+  geom_histogram()
+
+data.frame(x=means) %>%
+  ggplot(aes(sample=means)) +
+  stat_qq() +
+  stat_qq_line() 
+
+data.frame(x=means) %>%
+  ggplot(aes(x=x)) +
+  geom_density(col='blue') +
+  stat_function(fun = dnorm, args = list(mean=0, sd=sd_sample), col='red')
+```
+
+For n=10:
+```{r}
+n<-10
+times <-1000
+means<- rep(0, times)
+length(1:1000)
+for (i in 1:1000){
+  means[i] <- mean(rnorm(n=n, mean=0, sd=1))
+}
+var_sample <-1/n
+sd_sample <- sqrt(var_sample) 
+ggplot()+
+  aes(x=means)+
+  geom_histogram()
+
+data.frame(x=means) %>%
+  ggplot(aes(sample=means)) +
+  stat_qq() +
+  stat_qq_line() 
+
+data.frame(x=means) %>%
+  ggplot(aes(x=x)) +
+  geom_density(col='blue') +
+  stat_function(fun = dnorm, args = list(mean=0, sd=sd_sample), col='red')
+```
+
+For n=50:
+```{r}
+n<-50
+times <-1000
+means<- rep(0, times)
+length(1:1000)
+for (i in 1:1000){
+  means[i] <- mean(rnorm(n=n, mean=0, sd=1))
+}
+var_sample <-1/n
+sd_sample <- sqrt(var_sample) 
+ggplot()+
+  aes(x=means)+
+  geom_histogram()
+
+data.frame(x=means) %>%
+  ggplot(aes(sample=means)) +
+  stat_qq() +
+  stat_qq_line() 
+
+data.frame(x=means) %>%
+  ggplot(aes(x=x)) +
+  geom_density(col='blue') +
+  stat_function(fun = dnorm, args = list(mean=0, sd=sd_sample), col='red')
+```
+
+

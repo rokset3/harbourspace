@@ -1,0 +1,130 @@
+---
+title: "Assignment-2"
+author: "TemmirlanZholaman"
+date: "2023-02-13"
+output: html_document
+---
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(lattice)
+library(MASS)
+library(sandwich)
+library(mvtnorm)
+library(car)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(GGally)
+library(comprehenr)
+theme_set(theme_bw())
+```
+
+```{r echo=F}
+setwd('C:\\Users\\Temirlan\\Desktop\\HarbourSpace\\Module6 SDA\\ass2')
+data<-read.csv('FlightDelays.csv')
+head(data,10)
+?plot
+```
+## Exploratory Data Analysis
+
+```{r, echo=FALSE, fig.height=15, fig.width=15, warning=F, message=F}
+data<-subset(data, select=-c(ID, FlightNo))
+data %>% 
+  ggpairs(mapping = aes(alpha=0.5, fill='red'))
+```
+### After looking for the data, I am interested in checking:
+So basically, most of my hypothesis will be constructed on flight duration versus all of the factors, due to my personal interest. The list of questions I will try to answer with data are the following:
+
+* Is there a difference for delayed and non delayed flights in their Flight Length? (may be delayed flights are longer, or there is a tendency to delay a longer flights)
+* Do different Carriers have difference in Flight Duration
+* Can we say, that some of the Carriers tend to Delay more often, than others? (Proportion question)
+* Can we say, that the delay proportion varies with dates?
+* Is there a tendency that flights being delayed on different departure times differently?
+
+### Question 1: Can we say, that Delayed Flights and Non-Delayed Flights have different Flight Length (or flights that being delayed have different flight length)
+```{r}
+Delayed_FlightLen <- (data%>%filter(Delayed30=="Yes"))$FlightLength
+NotDelayed_FlightLen <- (data%>%filter(Delayed30=="No"))$FlightLength
+hyp1<-t.test(Delayed_FlightLen, NotDelayed_FlightLen)
+hyp1
+```
+###### Conclusion: 
+When testing the null hypothesis, that $\mu_1 - \mu_2 = 0$, we cannot reject the null hypothesis, as the p-value is `r hyp1$p.value`. The result is statistically insignificant, the null cannot be rejected
+
+
+### Question 2: Is there a difference in mean FlightLen between Carriers?
+```{r}
+AA_FlightLen <- (data%>%filter(Carrier=="AA"))$FlightLength
+UA_FlightLen <- (data%>%filter(Carrier=="UA"))$FlightLength
+hyp2<-t.test(AA_FlightLen, UA_FlightLen)
+hyp2
+
+```
+###### Conclusion
+From this simple t-test with independent samples we see, that there is a difference between flight length between airlines, equal to `r mean(AA_FlightLen) - mean(UA_FlightLen)` with 95% CI of [`r hyp2$conf.int`], p-value is `r hyp2$p.value`
+
+
+### Question 3: Is there enough evidence suggesting, that the proportions of delayed flights is not the same for different Carriers?
+
+```{r}
+num_flights_aa <- as.numeric(count(data%>%filter(Carrier=="AA")))
+num_flights_ua <- as.numeric(count(data%>%filter(Carrier=="UA")))
+
+num_del_flights_aa<- as.numeric(count(data%>%filter(Carrier=="AA",
+                                        Delayed30=="Yes")))
+num_del_flights_ua<- as.numeric(count(data%>%filter(Carrier=="UA",
+                                        Delayed30=="Yes")))
+hyp3<-prop.test(x=c(num_del_flights_aa, num_del_flights_ua),
+          n=c(num_flights_aa, num_flights_ua))
+hyp3
+```
+###### Conclusion
+We reject the null as the result is significant with p-value =`r hyp3$p.value`,X-sq = `r hyp3$statistic`, and 95 CI estimates are [`r hyp3$conf.int`]
+
+### Question 4: Is there a tendency, that flights are being delayed on different days with different proportions?
+```{r}
+days_count = rep(0, length(unique(data$Day)))
+days_delayed = rep(0, length(unique(data$Day)))
+idx=1
+for (day in unique(data$Day)){
+  days_count[idx]<-as.numeric(count(data%>%filter(Day==day)))
+  days_delayed[idx]<-as.numeric(count(data%>%filter(Day==day,
+                                                    Delayed30=="Yes")))
+  idx <- idx + 1
+  }
+hyp4<-prop.test(x=days_delayed,
+          n=days_count)
+names(hyp4$estimate)<- to_list(for(day in unique(data$Day))day)
+hyp4
+
+```
+###### Conclusion
+We reject the null as the result is significant with p-value =`r hyp4$p.value`,X-sq = `r hyp4$statistic`
+
+### Question 5: Is there a tendency that flights being delayed on different departure times differently?
+```{r}
+dep_time_count = rep(0, length(unique(data$DepartTime)))
+days_delayed = rep(0, length(unique(data$DepartTime)))
+idx=1
+for (DepTime in unique(data$DepartTime)){
+  dep_time_count[idx]<-as.numeric(count(filter(data,DepartTime==DepTime)))
+  days_delayed[idx]<-as.numeric(count(data%>%filter(DepartTime==DepTime,
+                                                    Delayed30=="Yes")))
+  idx <- idx + 1
+}
+hyp5<-prop.test(x=days_delayed,
+          n=dep_time_count)
+names(hyp5$estimate)<- to_list(for(DepTime in unique(data$DepartTime))DepTime)
+hyp5
+
+
+```
+###### Conclusion
+We reject the null that proportion of the delayed flights is the same in different department times. It seems, that most of the flights are delayed in the second part of the day, especially in 4-8pm and 8-midnight. p-val is `r hyp5$p.value` and X-squared is `r hyp5$statistic`
+
+# Summary
+In this dataset we can see interesting patterns:
+* We do not have evidence, that delayed and non delayed flights have different average flight length 
+* AA flight carriers has 5.54 units higher flight duration on average, than UA flight carriers
+* Also, AA flight carriers tend to delay flights less frequently than UA carriers
+* Finally, there is enough evidence, to state that on different days, delay proportions are different. Especially, on Friday and Thursday they are the highest
